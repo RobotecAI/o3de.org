@@ -37,7 +37,7 @@ The details of the listed interfaces are provided in a later section.
 ## Motivation 
 
 The `SimulationInterfaces` is ROS 2 API that allows to affect simulated entities in various ways.
-It is can be thought as ROS 2 API to talk with :
+It can be thought of as ROS 2 API to talk with :
 - [Simulated Bodies](/docs/user-guide/interactivity/physics/nvidia-physx/simulated-bodies/),
 - [Spawning and despawning](/docs/learning-guide/tutorials/entities-and-prefabs/spawn-a-prefab/),
 - pausing simulation,
@@ -47,28 +47,67 @@ With `SimulationInterfaces` you can query and modify state of simulated bodies.
 Those are entities with components such as [Rigid Body Component](docs/user-guide/components/reference/physx/rigid-body/) or [Static Rigid Body](/docs/user-guide/components/reference/physx/static-rigid-body/) and others.
 
 {{< note >}}
-Entities that has no physics, will not be available by `SimulationInterfaces`
+Entities that have no physics, will not be available by `SimulationInterfaces`
 {{< /note >}}
 
-There is recommendation to build your simulation assets in tree like structure where the trunk is a [Rigid Body Component](docs/user-guide/components/reference/physx/rigid-body/) or [Static Rigid Body](/docs/user-guide/components/reference/physx/static-rigid-body/) and children are other components (like meshes, lights and others).
+There is a recommendation to build your simulation assets in a tree-like structure where the trunk is a [Rigid Body Component](docs/user-guide/components/reference/physx/rigid-body/) or [Static Rigid Body](/docs/user-guide/components/reference/physx/static-rigid-body/) and children are other components (like meshes, lights, and others).
 
-The correctly designed prefab should has following structure:\
-![prefab](/images/user-guide/interactivity/robotics/correct_structure.png)
+The correctly designed prefab should have the following structure:\
+![prefab](/static/images/user-guide/interactivity/robotics/correct_structure.png)
 
 The `Rack` entity has [Static Rigid Body](/docs/user-guide/components/reference/physx/static-rigid-body/) and [PhysX Mesh Collider Component](/docs/user-guide/components/reference/physx/mesh-collider/) and is available in `SimulationInterfaces`.
 Entities `Boxes`, `Lv0`, `Lv1`, `Lv2` are only decorative. 
-However, above-mentioned will follow `Rack`, due to parent-child relation and [Transform Component](/docs/user-guide/components/reference/transform/).
+However, the entities mentioned above will follow `Rack`, due to parent-child relation and [Transform Component](/docs/user-guide/components/reference/transform/).
 
 The `SimulationInterfaces` allows to perform bound search. 
-You can specify what is you region of interests and ask for Simulated Entities inside.
+You can specify the region of interest and ask for Simulated Entities inside.
 This feature uses [Overlap Scene Query](/docs/user-guide/interactivity/physics/nvidia-physx/scene-queries/#overlap). 
-You need to have collider shapes added to entities to get results from [Overlap Scene Query](/docs/user-guide/interactivity/physics/nvidia-physx/scene-queries/#overlap).
+The results can be correctly interpreted only if the collider shapes are added to the entities.
 
 {{< note >}}
 The number of results in scene queries is pretty limited by default (32). 
 We highly recommend to increase this limit to Overlap Query Buffer Size in [PhysX Configuration](/docs/user-guide/interactivity/physics/nvidia-physx/configuring/).
 {{< /note >}}
 
+## Design
+
+### Namespaces
+
+Users looking at the source code of the `SimulationInterfaces` Gem might bw confused why there are two namespaces within one gem - `SimulationInterfaces` and `ROS2SimulationInterfaces`. The reason for this is to distinguish the part of the code that implements features of the `simulation_interfaces` standard in O3DE and defines API using EBuses (`SimulationInterfaces` namespace), from the part that acts as an adapter between ROS 2 and O3DE (`ROS2SimulationInterfaces` namespace). This also makes it possible in the future to split them into two gems - `SimulationInterfaces` and `ROS2SimulationInterfaces` to allow users to use features implemented by the `SimulationInterfaces` without adding the dependency to the ROS 2 framework.
+
+### O3DE implementation
+
+The O3DE implementation of the `simulation_interfaces` is split into four _System Components_. The reason for this is to group features that are somehow related into separate classes which also allows to reduce the complexity of the implementation.
+Implemented _System Components_:
+- `SimulationEntitiesManager` - system component that implements the part of the API responsible for dealing with the entities (spawning, deleting, getting the entity state, etc.)
+- `SimulationManager` - system component that implements the part of the API responsible for controlling the simulation (pausing, reloading, getting the simulation state, etc.)
+- `SimulationFeaturesAggregator` - system component that implements the `GetSimulatiorFeatures` (which is part of the standard) and extends the API with some additional functions (e.g. HasFeature which allows to check if the simulator supports a certain feature)
+- `ROS2SimulationInterfacesSystemComponent` - system component that is responsible for creating the handlers for the ROS 2 services and actions
+
+### Services and actions
+
+In our system, service and action handlers are designed to follow a unified architecture that promotes consistency and extensibility. All handlers for services and action servers inherit from their respective base classes—`ROS2ServiceBase` for service handlers and `ROS2ActionBase` for action handlers. Both of these base classes implement a common interface, `IROS2HandlerBase`, ensuring that all handlers adhere to a standardized structure.
+
+#### Inheritance Structure
+
+- **Service Handlers**: Inherit from `ROS2ServiceBase`, which in turn implements the `IROS2HandlerBase`.
+- **Action Handlers**: Inherit from `ROS2ActionBase`, which also implements the `IROS2HandlerBase`.
+
+This design enforces a commonality among all handlers while allowing for the specific functionalities required by services and actions.
+
+#### Main Interface `IROS2HandlerBase`
+
+The `IROS2HandlerBase` interface mandates that all handler implementations include several crucial functions. These functions are necessary for:
+
+1. **Registering Handlers in the System Component**: Handlers must implement methods that allow them to properly register within the _ROS2SimulationInterfacesSystemComponent_.
+
+2. **Informing About Supported Features**: Every handler is required to provide information about the feature(s) it supports. This is essential for ensuring that `GetSimulatorFeatures` method knows about futures supported by the simulator.
+
+By following this design, developers can ensure that all new handlers are consistent, maintainable, and easily integrable within the overall system architecture.
+
+#### Adding new handlers
+
+All new handler implementations must adhere to this design pattern by extending either `ROS2ServiceBase` or `ROS2ActionBase`. This will facilitate robust integration and foster an organized approach to future development.
 
 ## Supported Features overview
 
@@ -96,6 +135,7 @@ The following features are currently supported:
 - SIMULATION_RESET
 - SIMULATION_RESET_TIME
 - SIMULATION_RESET_SPAWNED
+- SIMULATION_RESET_STATE
 - SIMULATION_STATE_GETTING
 - SIMULATION_STATE_SETTING
 - SIMULATION_STATE_PAUSE
@@ -125,18 +165,19 @@ If you want to spawn a new object into the simulation environment, you need to k
 
 ### GetEntities service
 
-The `GetEntities` _service_ outputs a list of all spawned entities.
+The `GetEntities` _service_ outputs a list of all entities that fulfill requirements provided by the standard.
 
 ROS 2 _service_ definition: [GetEntities](https://github.com/ros-simulation/simulation_interfaces/tree/main/srv/GetEntities.srv) \
 EntityFilters definition: [EntityFilters](https://github.com/ros-simulation/simulation_interfaces/blob/main/msg/EntityFilters.msg) \
 Default _service_ name: `/get_entities` \
 O3DE EBus: `SimulationInterfaces::SimulationEntityManagerRequests::GetEntities`
 
-This service works in two ways:
+This service works in three ways:
  - returning to the caller whole cache of entities (when no filter in the query)
  - returning results of Overlap Scene Query (when Bounds where set the query)
+ - returning results that matches provided regular expression and/or Bounds (both parameters are provided as part of the `EntityFilters` field)
 
-The intermediate result is filtered by the regular expression parameter (given in filter string) and the category.
+The result is filtered by the regular expression parameter (given in filter string) and the category.
 
 **Note:** Filtering by tags is not yet supported.
 

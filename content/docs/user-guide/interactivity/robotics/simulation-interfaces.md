@@ -91,13 +91,11 @@ in [PhysX Configuration](/docs/user-guide/interactivity/physics/nvidia-physx/con
 
 ### Namespaces
 
-Users looking at the source code of the `SimulationInterfaces` Gem might be confused why there are two namespaces within
-one gem - `SimulationInterfaces` and `ROS2SimulationInterfaces`. The reason for this is to distinguish the part of the
-code that implements features of the `simulation_interfaces` standard in O3DE and defines API using EBuses (
-`SimulationInterfaces` namespace), from the part that acts as an adapter between ROS 2 and O3DE (
-`ROS2SimulationInterfaces` namespace). This also makes it possible in the future to split them into two gems -
-`SimulationInterfaces` and `ROS2SimulationInterfaces` to allow users to use features implemented by the
-`SimulationInterfaces` without adding the dependency to the ROS 2 framework.
+The implementation of `SimulationInterfaces` Gem is separated between two namespaces: `SimulationInterfaces` and
+`ROS2SimulationInterfaces`. The implementation of the `simulation_interfaces` standard in O3DE and the API using
+EBuses (`SimulationInterfaces` namespace) is distinct from the part that acts as an adapter between ROS 2 and O3DE (
+`ROS2SimulationInterfaces` namespace). This will enable the split into two separate Gems if needed (e.g. when
+implementing systems without the ROS 2 framework).
 
 ### O3DE implementation
 
@@ -238,7 +236,7 @@ This service works in three ways:
 
 - returning to the caller whole cache of entities (when no filter in the query)
 - returning results of Overlap Scene Query (when Bounds where set the query)
-- returning results that matches provided regular expression and/or Bounds (both parameters are provided as part of the
+- returning results that match provided regular expression and/or Bounds (both parameters are provided as part of the
   `EntityFilters` field)
 
 The result is filtered by the regular expression parameter (given in filter string) and the category.
